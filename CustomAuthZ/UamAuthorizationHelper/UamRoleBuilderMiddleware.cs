@@ -1,0 +1,70 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Text;
+using System.Threading.Tasks;
+using Maersk.NSCP.SCM.Uam.Models.UserPermissions;
+using Maersk.NSCP.Uam.Models.Constants;
+using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
+
+namespace UamAuthorizationHelper
+{
+    public class UamRoleBuilderMiddleware
+    {
+        private readonly RequestDelegate _next;
+
+        public UamRoleBuilderMiddleware(RequestDelegate next)
+        {
+            _next = next;
+        }
+
+        public async Task Invoke(HttpContext httpContext)
+        {
+            if (!httpContext.Request.Headers.Any(h => h.Key != UamPermissionConstants.ServiceKey))
+            {
+                if (!httpContext.Request.Headers.TryGetValue(UamPermissionConstants.UserPermissionsHeader, out var uamEncodedValues))
+                    throw new UnauthorizedAccessException("User permissions missing");
+                
+                var userPermissionValues = Encoding.UTF8.GetString(Convert.FromBase64String(uamEncodedValues));
+                
+                //TODO: handle DTO versions
+                var userPermissions = JsonConvert.DeserializeObject<UserPermissionsDto>(userPermissionValues);
+                var claims = PrepareClaims(userPermissions);
+
+                var claimsPrincipal = new ClaimsPrincipal();
+                claimsPrincipal.AddIdentity(new ClaimsIdentity(claims));
+            }
+
+
+            await _next(httpContext);
+        }
+
+        /*
+         use header: User-Permissions
+        eyJncm91cHMiOlt7Im5hbWUiOiJTQ00gT3JpZ2luIEN1c3RvbWVyIFNlcnZpY2UiLCJyb2xlcyI6W3sibmFtZSI6IkRPQ01BTiBOb3JtYWwgVXNlciAtIEJBU0YiLCJhcHBsaWNhdGlvbk5hbWUiOiJEb2N1bWVudCBNYW5hZ2VtZW50IDIuMCIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTSBPcmlnaW4gQ3VzdG9tZXIgU2VydmljZSIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBGaW5PcHMiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJDYXJyaWVyIEJvb2tpbmcgVmlldyIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBNYWVyc2stVGVzdC1JVE1VSSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNoaXBwaW5nIEluc3RydWN0aW9uIFZpZXciLCJhcHBsaWNhdGlvbk5hbWUiOiJTQ00gTWFlcnNrLVRlc3QtSVRNVUkiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJBZG1pbiIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBFbk0iLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJSZWFkZXIiLCJhcHBsaWNhdGlvbk5hbWUiOiJTQ00gRW5NIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiRWRpdG9yIiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIEVuTSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTSBNYWVyc2tJbnRlcm5hbCIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBBRUMiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJTQ00tRk8tY29uZmlnIiwiYXBwbGljYXRpb25OYW1lIjoiRmxvd09wdGltaXplciIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTS1GT192ZXNzZWxfc2NoZWR1bGUiLCJhcHBsaWNhdGlvbk5hbWUiOiJGbG93T3B0aW1pemVyIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiUmVhZCIsImFwcGxpY2F0aW9uTmFtZSI6IkMzIEFwcGxpY2F0aW9uIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiUmVhZCIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBDdXN0b21lciBUb2dnbGUiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJSZWFkIiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIEN1c3RvbWVyIE1pZ3JhdGlvbihOZXcpIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiUmVhZCIsImFwcGxpY2F0aW9uTmFtZSI6InNjbS12MnRlc3RtZG0tZGVwbG95bWVudCIsImFwcGxpY2F0aW9uSWQiOjB9XX0seyJuYW1lIjoiU0MgT3JpZ2luIEN1c3RvbWVyIFNlcnZpY2UgQWRtaW4iLCJyb2xlcyI6W3sibmFtZSI6IlNDTSBPcmlnaW4gQ3VzdG9tZXIgU2VydmljZSBBZG1pbiIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBGaW5PcHMiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJDYXJyaWVyIEJvb2tpbmcgRWRpdCIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBNYWVyc2stVGVzdC1JVE1VSSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNoaXBwaW5nIEluc3RydWN0aW9uIEVkaXQiLCJhcHBsaWNhdGlvbk5hbWUiOiJTQ00gTWFlcnNrLVRlc3QtSVRNVUkiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJBZG1pbiIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBFbk0iLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJSZWFkZXIiLCJhcHBsaWNhdGlvbk5hbWUiOiJTQ00gRW5NIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiRWRpdG9yIiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIEVuTSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTSBBZG1pbiIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBBRUMiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJTQ00gTWFlcnNrSW50ZXJuYWwiLCJhcHBsaWNhdGlvbk5hbWUiOiJTQ00gQUVDIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiT3JpZ2luU3VwZXJVc2VyIiwiYXBwbGljYXRpb25OYW1lIjoiREFNQ08tRGV2LVNDTV9PcmlnaW5fT3JkZXJfTVMtR2xvYmFsMDEiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJTQ00tRk8tcHVyY2hhc2Vfb3JkZXIiLCJhcHBsaWNhdGlvbk5hbWUiOiJGbG93T3B0aW1pemVyIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiU0NNLUZPLWxvYWRfcGxhbiIsImFwcGxpY2F0aW9uTmFtZSI6IkZsb3dPcHRpbWl6ZXIiLCJhcHBsaWNhdGlvbklkIjowfV19LHsibmFtZSI6IlNDTUZsb3dDdXN0b21lclNlcnZpY2UiLCJyb2xlcyI6W3sibmFtZSI6IkNhcnJpZXIgQm9va2luZyBWaWV3IiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIE1hZXJzay1UZXN0LUlUTVVJIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiU2hpcHBpbmcgSW5zdHJ1Y3Rpb24gVmlldyIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBNYWVyc2stVGVzdC1JVE1VSSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IkNhcnJpZXIgQm9va2luZyBFZGl0IiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIE1hZXJzay1UZXN0LUlUTVVJIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiU2hpcHBpbmcgSW5zdHJ1Y3Rpb24gRWRpdCIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBNYWVyc2stVGVzdC1JVE1VSSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTSBBZG1pbiIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBBRUMiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJTQ00gQ29uc2lnbmVlIiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIEFFQyIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTSBTaGlwcGVyIiwiYXBwbGljYXRpb25OYW1lIjoiU0NNIEFFQyIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IlNDTSBNYWVyc2tJbnRlcm5hbCIsImFwcGxpY2F0aW9uTmFtZSI6IlNDTSBBRUMiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJEb2NNYW4gU0NNIEFkbWluIiwiYXBwbGljYXRpb25OYW1lIjoiRG9jTWFuIFNDTSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IkRvY01hbiBTQ00gU3VwZXIgVXNlciIsImFwcGxpY2F0aW9uTmFtZSI6IkRvY01hbiBTQ00iLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJEb2NNYW4gU0NNIE5vcm1hbCBVc2VyIiwiYXBwbGljYXRpb25OYW1lIjoiRG9jTWFuIFNDTSIsImFwcGxpY2F0aW9uSWQiOjB9LHsibmFtZSI6IkRvY01hbiBTQ00gUmVhZGVyIFVzZXIiLCJhcHBsaWNhdGlvbk5hbWUiOiJEb2NNYW4gU0NNIiwiYXBwbGljYXRpb25JZCI6MH0seyJuYW1lIjoiT3JpZ2luU3VwZXJVc2VyIiwiYXBwbGljYXRpb25OYW1lIjoiREFNQ08tRGV2LVNDTV9PcmlnaW5fT3JkZXJfTVMtR2xvYmFsMDEiLCJhcHBsaWNhdGlvbklkIjowfSx7Im5hbWUiOiJPcmlnaW5SZWFkZXIiLCJhcHBsaWNhdGlvbk5hbWUiOiJEQU1DTy1EZXYtU0NNX09yaWdpbl9PcmRlcl9NUy1HbG9iYWwwMSIsImFwcGxpY2F0aW9uSWQiOjB9XX0seyJuYW1lIjoiRGFtY28gQWRtaW5zIiwicm9sZXMiOlt7Im5hbWUiOiJEYW1jbyBBZG1pbiIsImFwcGxpY2F0aW9uTmFtZSI6IlVBTSBBcHBsaWNhdGlvbiIsImFwcGxpY2F0aW9uSWQiOjB9XX1dLCJjb21wYW5pZXMiOlt7ImlkIjowLCJiZUNvZGUiOiJIVUZGWSIsImNvdW50cnlDb2RlIjoiVVMiLCJmdW5jdGlvbkNvZGUiOiJIUSIsInR5cGUiOiJTaGlwcGVyIiwicmVsYXRlZENvbXBhbmllcyI6W119LHsiaWQiOjAsImJlQ29kZSI6IkhVRkZZIiwiY291bnRyeUNvZGUiOiJVUyIsImZ1bmN0aW9uQ29kZSI6IkhRIiwidHlwZSI6IlN1cHBsaWVyIiwicmVsYXRlZENvbXBhbmllcyI6W3siaWQiOjAsImJlQ29kZSI6IkhVRkZZIiwiY291bnRyeUNvZGUiOiJVUyIsImZ1bmN0aW9uQ29kZSI6IkhRIiwidHlwZSI6IkZhY3RvcnkifV19LHsiaWQiOjAsImJlQ29kZSI6IkhVRkZZIiwiY291bnRyeUNvZGUiOiJVUyIsImZ1bmN0aW9uQ29kZSI6IkhRIiwidHlwZSI6IkNvbnNpZ25lZSIsInJlbGF0ZWRDb21wYW5pZXMiOlt7ImlkIjowLCJiZUNvZGUiOiJIVUZGWSIsImNvdW50cnlDb2RlIjoiVVMiLCJmdW5jdGlvbkNvZGUiOiJIUSIsInR5cGUiOiJGYWN0b3J5In0seyJpZCI6MCwiYmVDb2RlIjoiSU5ESVRFWCIsImNvdW50cnlDb2RlIjoiRVMiLCJmdW5jdGlvbkNvZGUiOiJIUSIsInR5cGUiOiJTaGlwcGVyIn1dfSx7ImlkIjowLCJiZUNvZGUiOiJIVUZGWSIsImNvdW50cnlDb2RlIjoiVVMiLCJmdW5jdGlvbkNvZGUiOiJIUSIsInR5cGUiOiJGYWN0b3J5IiwicmVsYXRlZENvbXBhbmllcyI6W3siaWQiOjAsImJlQ29kZSI6IkhVRkZZIiwiY291bnRyeUNvZGUiOiJVUyIsImZ1bmN0aW9uQ29kZSI6IkhRIiwidHlwZSI6IlN1cHBsaWVyIn0seyJpZCI6MCwiYmVDb2RlIjoiSFVGRlkiLCJjb3VudHJ5Q29kZSI6IlVTIiwiZnVuY3Rpb25Db2RlIjoiSFEiLCJ0eXBlIjoiQ29uc2lnbmVlIn1dfSx7ImlkIjowLCJiZUNvZGUiOiJJTkRJVEVYIiwiY291bnRyeUNvZGUiOiJFUyIsImZ1bmN0aW9uQ29kZSI6IkhRIiwidHlwZSI6IlNoaXBwZXIiLCJyZWxhdGVkQ29tcGFuaWVzIjpbeyJpZCI6MCwiYmVDb2RlIjoiSFVGRlkiLCJjb3VudHJ5Q29kZSI6IlVTIiwiZnVuY3Rpb25Db2RlIjoiSFEiLCJ0eXBlIjoiQ29uc2lnbmVlIn1dfSx7ImlkIjowLCJiZUNvZGUiOiJJTkRJVEVYIiwiY291bnRyeUNvZGUiOiJFUyIsImZ1bmN0aW9uQ29kZSI6IkhRIiwidHlwZSI6IkNvbnNpZ25lZSIsInJlbGF0ZWRDb21wYW5pZXMiOltdfSx7ImlkIjowLCJiZUNvZGUiOiJTVFJBRElWQSIsImNvdW50cnlDb2RlIjoiRVMiLCJmdW5jdGlvbkNvZGUiOiJIUSIsInR5cGUiOiJDb25zaWduZWUiLCJyZWxhdGVkQ29tcGFuaWVzIjpbXX0seyJpZCI6MCwiYmVDb2RlIjoiRVNTVkUwMDEiLCJjb3VudHJ5Q29kZSI6IlNFIiwiZnVuY3Rpb25Db2RlIjoiSFEiLCJ0eXBlIjoiQ29uc2lnbmVlIiwicmVsYXRlZENvbXBhbmllcyI6W119LHsiaWQiOjAsImJlQ29kZSI6IkVFQ09KTEEiLCJjb3VudHJ5Q29kZSI6IlVTIiwiZnVuY3Rpb25Db2RlIjoiSFEiLCJ0eXBlIjoiQ29uc2lnbmVlIiwicmVsYXRlZENvbXBhbmllcyI6W119XSwidXNlckluZm8iOnsiaWQiOjAsImZpcnN0TmFtZSI6IkFybmFiIiwibGFzdE5hbWUiOiJCaGF0dGFjaGFyeWEiLCJlbWFpbCI6ImFybmFiLmJoYXR0YWNoYXJ5YUBtYWVyc2suY29tIiwidXNlck5hbWUiOiJBQkgxNzYiLCJ1c2VyVHlwZSI6ImludGVybmFsIn19
+         */
+
+        private IEnumerable<Claim> PrepareClaims(UserPermissionsDto userPermissions)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.Upn, userPermissions.UserName),
+                new Claim("UserType", userPermissions.UserType),
+                new Claim(ClaimTypes.NameIdentifier, userPermissions.UserName)
+            };
+
+            if (!string.IsNullOrWhiteSpace(userPermissions.FirstName))
+                claims.Add(new Claim("Firstname", userPermissions.FirstName));
+
+            if (!string.IsNullOrWhiteSpace(userPermissions.LastName))
+                claims.Add(new Claim("Lastname", userPermissions.LastName));
+
+            if (userPermissions.UserGroups != null)
+                claims.AddRange(userPermissions.UserGroups.Select(item => new Claim(ClaimTypes.Role, item.UserGroupName)));
+
+            return claims;
+        }
+    }
+}
